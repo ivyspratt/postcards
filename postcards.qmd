@@ -13,6 +13,54 @@ library(tidyverse)
 library(primer.data)
 library(tidymodels)
 library(broom)
+library(marginaleffects)
 ```
 
-Sending out postcards during voting periods has been a method used by political figures for decades. We use data from a 2006 experiment in Michigan to help us figure out the effect that sending these postcards have on the probability that the voters will vote, applying it to a current day governor election in Texas. We recognize that using data from Michigan and applying it to Texas may not be completely representative. We fit a logistic regression model predicting voter turnout as a function of postcard treatment, voter engagement, age, and sex.
+```{r}
+#| cache: true
+
+x <- shaming |> 
+  mutate(civ_engage = primary_00 + primary_02 + primary_04 + 
+               general_00 + general_02 + general_04) |> 
+  select(primary_06, treatment, sex, age, civ_engage) |> 
+  mutate(voter_class = factor(
+    case_when(
+      civ_engage %in% c(5, 6) ~ "Always Vote",
+      civ_engage %in% c(3, 4) ~ "Sometimes Vote",
+      civ_engage %in% c(1, 2) ~ "Rarely Vote"),
+         levels = c("Rarely Vote", 
+                    "Sometimes Vote", 
+                    "Always Vote"))) |>
+  mutate(voted = as.factor(primary_06))
+  
+fit_vote <- logistic_reg(engine = "glm") |>
+  fit(voted ~ age + sex + treatment * voter_class, data = x)
+```
+
+```{r}
+baseline <- preds |>
+  filter(treatment == "No Postcard") |>
+  select(voter_class, baseline_est = estimate)
+
+plot_df <- preds |>
+  left_join(baseline, by = "voter_class") |>
+  mutate(
+    increase_pct = 100 * (estimate - baseline_est)
+  )
+
+plot_df |>
+  filter(treatment != "No Postcard", increase_pct > 0) |>
+  ggplot(aes(x = treatment, y = increase_pct, fill = voter_class)) +
+  geom_col(position = position_dodge(width = 0.8)) +
+  labs(
+    title = "Percentage Point Increase in Voting by Treatment and Voter Class",
+    subtitle = "Turnout gains from postcards are largest for infrequent voters and smallest for those who always vote.",
+    y = "Increase in Predicted Probability (%)",
+    x = "Postcard Type",
+    fill = "Voter Class",
+    caption = "Michigan 2006 primary voting results"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+Sending out postcards during voting periods has been a method used by political figures for decades. We use data from a 2006 experiment in Michigan to help us figure out the effect that sending these postcards have on the probability that the voters will vote, applying it to a current day governor election in Texas. We recognize that using data from Michigan and applying it to Texas may not be completely representative. We fit a logistic regression model predicting voter turnout as a function of postcard treatment, voter engagement, age, and sex. Our model showed that the "Neighbors" postcard had the greatest voter increase, and raised the probability of voting by 68 percentage points. While the results indicate strong effects, our estimates rest on assumptions—most notably, that the Michigan sample is representative and that the model is correctly specified. Real-world outcomes in Texas may differ, and actual effects could be smaller if these assumptions do not hold.
